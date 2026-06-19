@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Atrapa Plumas</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d1b2a;
+    font-family: 'Georgia', serif;
+    overflow: hidden;
+    height: 100dvh;
+    width: 100vw;
+    touch-action: none;
+    user-select: none;
+  }
+
+  #game-canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* HUD */
+  #hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 22px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent);
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  #score-display {
+    font-size: clamp(1.1rem, 4vw, 1.6rem);
+    color: #e8f4fd;
+    letter-spacing: 0.05em;
+    text-shadow: 0 0 12px #5bc8f5aa;
+  }
+
+  #score-display span {
+    color: #5bc8f5;
+    font-size: 1.3em;
+    font-weight: bold;
+  }
+
+  #timer-display {
+    font-size: clamp(1.4rem, 5vw, 2rem);
+    color: #fff;
+    letter-spacing: 0.1em;
+    text-shadow: 0 0 16px #ff6b6b88;
+    transition: color 0.3s;
+  }
+
+  #timer-display.urgent { color: #ff6b6b; text-shadow: 0 0 20px #ff6b6bcc; }
+
+  #combo-display {
+    font-size: clamp(0.9rem, 3vw, 1.2rem);
+    color: #ffd700;
+    text-shadow: 0 0 10px #ffd70088;
+    min-width: 80px;
+    text-align: right;
+  }
+
+  /* Screens */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    background: rgba(13, 27, 42, 0.93);
+    backdrop-filter: blur(4px);
+  }
+
+  .screen h1 {
+    font-size: clamp(2rem, 8vw, 3.5rem);
+    color: #e8f4fd;
+    text-shadow: 0 0 30px #5bc8f5;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.3em;
+  }
+
+  .screen .subtitle {
+    color: #7eb8d4;
+    font-size: clamp(0.85rem, 3vw, 1.1rem);
+    margin-bottom: 2.5em;
+    text-align: center;
+    max-width: 340px;
+    line-height: 1.5;
+  }
+
+  .btn {
+    background: transparent;
+    border: 2px solid #5bc8f5;
+    color: #5bc8f5;
+    font-family: 'Georgia', serif;
+    font-size: clamp(1rem, 3.5vw, 1.3rem);
+    padding: 0.7em 2.2em;
+    cursor: pointer;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+    border-radius: 2px;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .btn:hover, .btn:active {
+    background: #5bc8f5;
+    color: #0d1b2a;
+    box-shadow: 0 0 24px #5bc8f5;
+  }
+
+  #end-screen .big-score {
+    font-size: clamp(3rem, 14vw, 6rem);
+    color: #ffd700;
+    text-shadow: 0 0 40px #ffd70066;
+    line-height: 1;
+    margin-bottom: 0.15em;
+  }
+
+  #end-screen .label {
+    color: #7eb8d4;
+    font-size: clamp(0.8rem, 2.5vw, 1rem);
+    margin-bottom: 0.6em;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  #end-screen .verdict {
+    color: #e8f4fd;
+    font-size: clamp(1rem, 3.5vw, 1.4rem);
+    margin-bottom: 2em;
+    text-align: center;
+  }
+
+  /* Feather SVG element */
+  .feather-el {
+    position: absolute;
+    cursor: pointer;
+    transform-origin: center;
+    will-change: transform;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+  }
+
+  /* Catch burst */
+  .burst {
+    position: absolute;
+    pointer-events: none;
+    font-size: 1.4rem;
+    color: #ffd700;
+    text-shadow: 0 0 8px #ffd700;
+    font-family: 'Georgia', serif;
+    animation: floatUp 0.7s ease-out forwards;
+    z-index: 15;
+  }
+
+  @keyframes floatUp {
+    0%   { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-60px) scale(1.4); }
+  }
+
+  /* Particles */
+  .particle {
+    position: absolute;
+    border-radius: 50%;
+    pointer-events: none;
+    animation: particleFade 0.6s ease-out forwards;
+  }
+
+  @keyframes particleFade {
+    0%   { opacity: 0.9; transform: scale(1); }
+    100% { opacity: 0;   transform: scale(0); }
+  }
+
+  /* Background floating dust */
+  #dust-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="dust-layer"></canvas>
+<div id="game-canvas"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="score-display">Plumas: <span id="score-val">0</span></div>
+  <div id="timer-display">1:00</div>
+  <div id="combo-display" id="combo-val"></div>
+</div>
+
+<!-- Start Screen -->
+<div class="screen" id="start-screen">
+  <h1>🪶 Plumas</h1>
+  <p class="subtitle">Atrapa todas las plumas que puedas en 60 segundos.<br>Toca o hacé clic sobre cada una.</p>
+  <button class="btn" id="btn-start">Comenzar</button>
+</div>
+
+<!-- End Screen -->
+<div class="screen" id="end-screen" style="display:none">
+  <p class="label">Plumas atrapadas</p>
+  <div class="big-score" id="final-score">0</div>
+  <p class="verdict" id="verdict-text"></p>
+  <button class="btn" id="btn-restart">Jugar de nuevo</button>
+</div>
+
+<script>
+(function() {
+  // ── CONFIG ──────────────────────────────────────────
+  const GAME_DURATION   = 60;   // seconds
+  const FEATHER_RATE_MS = 900;  // ms between spawns (initial)
+  const MAX_FEATHERS    = 22;   // max simultaneous feathers
+  const FEATHER_LIFESPAN= 7000; // ms a feather stays visible
+
+  // ── STATE ───────────────────────────────────────────
+  let score = 0, timeLeft = GAME_DURATION, gameRunning = false;
+  let feathers = [], spawnTimer = null, countdownTimer = null;
+  let combo = 0, comboTimeout = null;
+  let totalSpawned = 0;
+
+  // ── DOM refs ─────────────────────────────────────────
+  const gameCanvas   = document.getElementById('game-canvas');
+  const startScreen  = document.getElementById('start-screen');
+  const endScreen    = document.getElementById('end-screen');
+  const scoreVal     = document.getElementById('score-val');
+  const timerDisplay = document.getElementById('timer-display');
+  const comboDisplay = document.getElementById('combo-display');
+  const finalScore   = document.getElementById('final-score');
+  const verdictText  = document.getElementById('verdict-text');
+
+  document.getElementById('btn-start').addEventListener('click', startGame);
+  document.getElementById('btn-restart').addEventListener('click', startGame);
+
+  // ── DUST BACKGROUND ──────────────────────────────────
+  const dustCanvas = document.getElementById('dust-layer');
+  const ctx = dustCanvas.getContext('2d');
+  let dustParticles = [];
+
+  function initDust() {
+    dustCanvas.width  = window.innerWidth;
+    dustCanvas.height = window.innerHeight;
+    dustParticles = Array.from({length: 60}, () => ({
+      x: Math.random() * dustCanvas.width,
+      y: Math.random() * dustCanvas.height,
+      r: Math.random() * 1.5 + 0.3,
+      speed: Math.random() * 0.3 + 0.1,
+      drift: (Math.random() - 0.5) * 0.2,
+      alpha: Math.random() * 0.4 + 0.05,
+    }));
+  }
+
+  function animateDust() {
+    ctx.clearRect(0, 0, dustCanvas.width, dustCanvas.height);
+    dustParticles.forEach(p => {
+      p.y -= p.speed;
+      p.x += p.drift;
+      if (p.y < -2) { p.y = dustCanvas.height + 2; p.x = Math.random() * dustCanvas.width; }
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(91,200,245,${p.alpha})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(animateDust);
+  }
+
+  window.addEventListener('resize', initDust);
+  initDust();
+  animateDust();
+
+  // ── FEATHER SVG GENERATOR ────────────────────────────
+  const FEATHER_COLORS = [
+    ['#c8e6f5','#7eb8d4','#3a8ab5'],
+    ['#ffd6e0','#ff8fab','#c9184a'],
+    ['#d8f3dc','#74c69d','#1b7a4e'],
+    ['#fff3b0','#ffd60a','#e09c00'],
+    ['#e8d5f5','#b57bee','#7b2d8b'],
+    ['#ffddd2','#e29578','#b56a45'],
+  ];
+
+  function makeFeatherSVG(colorSet, size) {
+    const [light, mid, dark] = colorSet;
+    const w = size, h = size * 2.4;
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 40 96">
+  <defs>
+    <linearGradient id="fg" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="${light}"/>
+      <stop offset="50%" stop-color="${mid}"/>
+      <stop offset="100%" stop-color="${dark}"/>
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="1.5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <!-- Quill shaft -->
+  <line x1="20" y1="90" x2="20" y2="10" stroke="${dark}" stroke-width="1.2" opacity="0.7"/>
+  <!-- Left vanes -->
+  <path d="M20,70 Q8,60 6,42 Q10,50 20,55" fill="url(#fg)" opacity="0.85" filter="url(#glow)"/>
+  <path d="M20,55 Q5,45 4,28 Q9,38 20,40" fill="url(#fg)" opacity="0.8"/>
+  <path d="M20,40 Q6,30 8,14 Q12,24 20,26" fill="url(#fg)" opacity="0.75"/>
+  <path d="M20,26 Q10,14 14,6 Q17,14 20,16" fill="url(#fg)" opacity="0.7"/>
+  <!-- Right vanes -->
+  <path d="M20,70 Q32,60 34,42 Q30,50 20,55" fill="url(#fg)" opacity="0.85" filter="url(#glow)"/>
+  <path d="M20,55 Q35,45 36,28 Q31,38 20,40" fill="url(#fg)" opacity="0.8"/>
+  <path d="M20,40 Q34,30 32,14 Q28,24 20,26" fill="url(#fg)" opacity="0.75"/>
+  <path d="M20,26 Q30,14 26,6 Q23,14 20,16" fill="url(#fg)" opacity="0.7"/>
+  <!-- Tip -->
+  <ellipse cx="20" cy="8" rx="3" ry="4" fill="${light}" opacity="0.9"/>
+</svg>`.trim();
+  }
+
+  // ── SPAWN FEATHER ────────────────────────────────────
+  function spawnFeather() {
+    if (!gameRunning) return;
+    if (feathers.length >= MAX_FEATHERS) return;
+
+    const size = Math.random() * 18 + 22; // 22–40
+    const colorSet = FEATHER_COLORS[Math.floor(Math.random() * FEATHER_COLORS.length)];
+    const svgStr = makeFeatherSVG(colorSet, size);
+
+    const el = document.createElement('div');
+    el.className = 'feather-el';
+    el.innerHTML = svgStr;
+
+    const maxX = window.innerWidth  - size * 1.1;
+    const maxY = window.innerHeight - size * 2.4 - 50;
+    const startX = Math.random() * maxX;
+    const startY = -size * 2.4;
+
+    // Physics
+    const drift = (Math.random() - 0.5) * 1.2;
+    const fallSpeed = Math.random() * 1.2 + 0.5;
+    const wobble = Math.random() * 2 + 1;
+    const wobbleSpeed = Math.random() * 0.03 + 0.015;
+    let angle = Math.random() * 20 - 10;
+    const rotSpeed = (Math.random() - 0.5) * 1.5;
+    let x = startX, y = startY;
+    let born = Date.now();
+    let frame;
+
+    el.style.left = x + 'px';
+    el.style.top  = y + 'px';
+    el.style.transform = `rotate(${angle}deg)`;
+    el.style.opacity = '1';
+    gameCanvas.appendChild(el);
+
+    const featherObj = { el, alive: true };
+    feathers.push(featherObj);
+    totalSpawned++;
+
+    // Animate fall
+    function tick() {
+      if (!featherObj.alive) return;
+      const age = Date.now() - born;
+      if (age > FEATHER_LIFESPAN) { removeFeather(featherObj); return; }
+
+      x += drift + Math.sin(Date.now() * wobbleSpeed) * wobble * 0.08;
+      y += fallSpeed;
+      angle += rotSpeed * 0.5;
+
+      // Fade out in last 1.5s
+      if (age > FEATHER_LIFESPAN - 1500) {
+        el.style.opacity = ((FEATHER_LIFESPAN - age) / 1500).toString();
+      }
+
+      // Bounce at edges
+      if (x < 0) x = 0;
+      if (x > maxX) x = maxX;
+
+      // Remove if off screen
+      if (y > window.innerHeight + size * 2.4) { removeFeather(featherObj); return; }
+
+      el.style.left = x + 'px';
+      el.style.top  = y + 'px';
+      el.style.transform = `rotate(${angle}deg)`;
+      frame = requestAnimationFrame(tick);
+    }
+    frame = requestAnimationFrame(tick);
+    featherObj.frame = frame;
+
+    // Catch handler (click + touch)
+    function catchIt(e) {
+      e.stopPropagation();
+      if (!featherObj.alive || !gameRunning) return;
+      catchFeather(featherObj, x, y, size);
+    }
+    el.addEventListener('mousedown', catchIt, { passive: false });
+    el.addEventListener('touchstart', catchIt, { passive: false });
+  }
+
+  function removeFeather(obj) {
+    if (!obj.alive) return;
+    obj.alive = false;
+    cancelAnimationFrame(obj.frame);
+    if (obj.el.parentNode) obj.el.parentNode.removeChild(obj.el);
+    feathers = feathers.filter(f => f !== obj);
+  }
+
+  // ── CATCH LOGIC ──────────────────────────────────────
+  function catchFeather(obj, x, y, size) {
+    // Combo
+    clearTimeout(comboTimeout);
+    combo++;
+    comboTimeout = setTimeout(() => { combo = 0; updateComboDisplay(); }, 1500);
+
+    score++;
+    scoreVal.textContent = score;
+    updateComboDisplay();
+
+    // Score popup
+    const burst = document.createElement('div');
+    burst.className = 'burst';
+    const pts = combo >= 3 ? `+${combo}✨` : '+1';
+    burst.textContent = pts;
+    burst.style.left = (x + size / 2 - 16) + 'px';
+    burst.style.top  = (y - 10) + 'px';
+    document.body.appendChild(burst);
+    setTimeout(() => burst.remove(), 700);
+
+    // Particles
+    spawnParticles(x + size / 2, y + size * 1.2, obj.el.querySelector('linearGradient stop:nth-child(2)')?.getAttribute('stop-color') || '#5bc8f5');
+
+    removeFeather(obj);
+  }
+
+  function spawnParticles(cx, cy, color) {
+    for (let i = 0; i < 7; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const sz = Math.random() * 6 + 3;
+      const angle = Math.random() * Math.PI * 2;
+      const dist  = Math.random() * 40 + 10;
+      p.style.width  = sz + 'px';
+      p.style.height = sz + 'px';
+      p.style.background = color;
+      p.style.left = (cx + Math.cos(angle) * dist) + 'px';
+      p.style.top  = (cy + Math.sin(angle) * dist) + 'px';
+      p.style.animationDuration = (Math.random() * 0.3 + 0.4) + 's';
+      document.body.appendChild(p);
+      setTimeout(() => p.remove(), 700);
+    }
+  }
+
+  function updateComboDisplay() {
+    if (combo >= 3) {
+      comboDisplay.textContent = `🔥 x${combo}`;
+    } else {
+      comboDisplay.textContent = '';
+    }
+  }
+
+  // ── TIMER ────────────────────────────────────────────
+  function formatTime(s) {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2,'0')}`;
+  }
+
+  function tick() {
+    timeLeft--;
+    timerDisplay.textContent = formatTime(timeLeft);
+    timerDisplay.classList.toggle('urgent', timeLeft <= 10);
+    if (timeLeft <= 0) endGame();
+  }
+
+  // ── GAME FLOW ────────────────────────────────────────
+  function startGame() {
+    // Reset
+    score = 0; timeLeft = GAME_DURATION; combo = 0; totalSpawned = 0;
+    scoreVal.textContent = '0';
+    timerDisplay.textContent = '1:00';
+    timerDisplay.classList.remove('urgent');
+    comboDisplay.textContent = '';
+    feathers.forEach(f => removeFeather(f));
+    feathers = [];
+    gameCanvas.innerHTML = '';
+
+    startScreen.style.display = 'none';
+    endScreen.style.display   = 'none';
+
+    gameRunning = true;
+
+    // Spawn loop — accelerates over time
+    let spawnInterval = FEATHER_RATE_MS;
+    function scheduleSpawn() {
+      if (!gameRunning) return;
+      spawnFeather();
+      // Speed up gradually
+      spawnInterval = Math.max(350, FEATHER_RATE_MS - (GAME_DURATION - timeLeft) * 8);
+      spawnTimer = setTimeout(scheduleSpawn, spawnInterval);
+    }
+    scheduleSpawn();
+
+    countdownTimer = setInterval(tick, 1000);
+  }
+
+  function endGame() {
+    gameRunning = false;
+    clearTimeout(spawnTimer);
+    clearInterval(countdownTimer);
+
+    // Fade out remaining feathers
+    feathers.forEach(f => {
+      if (f.alive) {
+        f.el.style.transition = 'opacity 0.4s';
+        f.el.style.opacity = '0';
+        setTimeout(() => removeFeather(f), 400);
+      }
+    });
+
+    setTimeout(() => {
+      finalScore.textContent = score;
+      verdictText.textContent = getVerdict(score);
+      endScreen.style.display = 'flex';
+    }, 500);
+  }
+
+  function getVerdict(s) {
+    if (s === 0)  return '¡Ninguna! A practicar... 🫥';
+    if (s < 10)   return '¡Buen comienzo! 🌱';
+    if (s < 20)   return '¡Bien hecho! 👍';
+    if (s < 30)   return '¡Muy bien! ✨';
+    if (s < 45)   return '¡Impresionante! 🔥';
+    if (s < 60)   return '¡Extraordinario! 🌟';
+    return '¡Leyenda absoluta! 👑🪶';
+  }
+
+})();
+</script>
+</body>
+</html>
